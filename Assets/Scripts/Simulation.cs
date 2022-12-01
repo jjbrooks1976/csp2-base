@@ -1,37 +1,14 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Unity.Networking.Transport;
 
 public class Simulation : MonoBehaviour
 {
-    private struct Input
-    {
-        public bool up;
-        public bool down;
-        public bool left;
-        public bool right;
-        public bool jump;
-    }
-
     private struct State
     {
         public Vector3 position;
         public Quaternion rotation;
-    }
-
-    private struct InputMessage
-    {
-        public int startTick;
-        public List<Input> inputs;
-    }
-
-    private struct StateMessage
-    {
-        public int tick;
-        public Vector3 position;
-        public Quaternion rotation;
-        public Vector3 velocity;
-        public Vector3 angularVelocity;
     }
 
     public float moveForce;
@@ -49,10 +26,12 @@ public class Simulation : MonoBehaviour
     private State[] stateBuffer; //predicted states
     private Vector3 positionError;
     private Quaternion rotationError;
+    private NetworkDriver networkDriver;
+    private NetworkConnection connection;
     private Scene scene;
     private PhysicsScene physicsScene;
 
-    private void Start()
+    void Start()
     {
         currentTime = 0.0f;
         currentTick = 0;
@@ -61,21 +40,14 @@ public class Simulation : MonoBehaviour
         stateBuffer = new State[BUFFER_SIZE];
         positionError = Vector3.zero;
         rotationError = Quaternion.identity;
+        connection = default(NetworkConnection);
 
-        scene = SceneManager.LoadScene("Background", new LoadSceneParameters()
-        {
-            loadSceneMode = LoadSceneMode.Additive,
-            localPhysicsMode = LocalPhysicsMode.Physics3D
-        });
-
-        physicsScene = scene.GetPhysicsScene();
-
-        SceneManager.MoveGameObjectToScene(player, scene);
+        InitializeNetwork();
+        InitializeScene();
     }
 
-    private void Update()
+    void Update()
     {
-        int tick = this.currentTick;
         float deltaTime = Time.fixedDeltaTime;
         float time = this.currentTime;
 
@@ -107,7 +79,15 @@ public class Simulation : MonoBehaviour
         }
 
         this.currentTime = time;
-        this.currentTick = tick;
+    }
+
+    void OnDestroy()
+    {
+        if (networkDriver.IsCreated)
+        {
+            networkDriver.Dispose();
+            connection = default(NetworkConnection);
+        }
     }
 
     private void UpdateStateAndStep(
@@ -121,6 +101,31 @@ public class Simulation : MonoBehaviour
 
         ApplyForce(rigidbody, input);
         physicsScene.Simulate(deltaTime);
+    }
+
+    private void InitializeNetwork()
+    {
+        networkDriver = NetworkDriver.Create();
+        NetworkEndPoint endpoint = NetworkEndPoint.Parse(Server.ADDRESS, Server.PORT);
+        connection = networkDriver.Connect(endpoint);
+        if (connection.IsCreated)
+        {
+            Debug.Log("Connected to server");
+        }
+    }
+
+    private void InitializeScene()
+    {
+        scene = SceneManager.LoadScene("Background",
+            new LoadSceneParameters()
+            {
+                loadSceneMode = LoadSceneMode.Additive,
+                localPhysicsMode = LocalPhysicsMode.Physics3D
+            });
+
+        physicsScene = scene.GetPhysicsScene();
+
+        SceneManager.MoveGameObjectToScene(player, scene);
     }
 
     private void ApplyForce(Rigidbody rigidbody, Input input)
@@ -149,7 +154,7 @@ public class Simulation : MonoBehaviour
 
         if (input.jump && rigidbody.transform.position.y <= jumpThreshold)
         {
-            rigidbody.AddForce(camera.up * jumpThreshold, ForceMode.Impulse);
+            rigidbody.AddForce(camera.up * moveForce, ForceMode.Impulse);
         }
     }
 
@@ -167,6 +172,7 @@ public class Simulation : MonoBehaviour
             message.inputs.Add(inputBuffer[index % BUFFER_SIZE]);
         }
 
+        Debug.Log(message);
         //TODO: serialize & send message (to server)
     }
 

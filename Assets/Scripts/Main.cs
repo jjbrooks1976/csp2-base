@@ -10,16 +10,16 @@ public class Main : MonoBehaviour
     public Toggle correctionSmoothingToggle;
     public Toggle redundantInputToggle;
 
-    public void Start()
+    void Start()
     {
         errorCorrectionToggle.isOn = true;
         correctionSmoothingToggle.isOn = true;
         redundantInputToggle.isOn = true;
     }
 
-    private void Update()
+    void Update()
     {
-        if (Input.GetKeyDown(KeyCode.F12))
+        if (UnityEngine.Input.GetKeyDown(KeyCode.F12))
         {
             canvas.SetActive(!canvas.activeSelf);
         }
