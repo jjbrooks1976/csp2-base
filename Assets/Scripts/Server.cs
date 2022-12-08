@@ -20,6 +20,7 @@ public class Server : MonoBehaviour
         networkDriver.ScheduleUpdate().Complete();
 
         AcceptConnection();
+        ProcessNetworkEvents();
     }
 
     void OnDestroy()
@@ -57,6 +58,31 @@ public class Server : MonoBehaviour
             connections.Add(connection);
             Debug.Log($"Accepted a connection {connection.InternalId}");
         }
+    }
 
+    private void ProcessNetworkEvents()
+    {
+        DataStreamReader reader;
+        for (int index = 0; index < connections.Length; index++)
+        {
+            NetworkEvent.Type command;
+            while ((command = networkDriver.PopEventForConnection(connections[index], out reader)) != NetworkEvent.Type.Empty)
+            {
+                switch (command)
+                {
+                    case NetworkEvent.Type.Connect:
+                        Debug.Log("Client connected to server");
+                        break;
+                    case NetworkEvent.Type.Data:
+                        InputMessage message = InputMessage.Deserialize(ref reader);
+                        Debug.Log($"Server data: {message}");
+                        break;
+                    case NetworkEvent.Type.Disconnect:
+                        Debug.Log("Client disconnected from server");
+                        connections[index] = default(NetworkConnection);
+                        break;
+                }
+            }
+        }
     }
 }

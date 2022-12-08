@@ -55,7 +55,7 @@ public class Client : MonoBehaviour
     void Update()
     {
         ProcessNetworkEvents();
-        ProcessSimulationEvent();
+        AdvanceSimulation();
     }
 
     void OnDestroy()
@@ -92,9 +92,9 @@ public class Client : MonoBehaviour
     {
         networkDriver.ScheduleUpdate().Complete();
 
-        DataStreamReader stream;
+        DataStreamReader reader;
         NetworkEvent.Type command;
-        while ((command = connection.PopEvent(networkDriver, out stream)) != NetworkEvent.Type.Empty)
+        while ((command = connection.PopEvent(networkDriver, out reader)) != NetworkEvent.Type.Empty)
         {
             switch(command)
             {
@@ -113,7 +113,7 @@ public class Client : MonoBehaviour
         }
     }
 
-    private void ProcessSimulationEvent()
+    private void AdvanceSimulation()
     {
         float deltaTime = Time.fixedDeltaTime;
         float time = this.currentTime;
@@ -129,8 +129,8 @@ public class Client : MonoBehaviour
             {
                 up = UnityEngine.Input.GetKey(KeyCode.W),
                 down = UnityEngine.Input.GetKey(KeyCode.S),
-                left = UnityEngine.Input.GetKey(KeyCode.A),
                 right = UnityEngine.Input.GetKey(KeyCode.D),
+                left = UnityEngine.Input.GetKey(KeyCode.A),
                 jump = UnityEngine.Input.GetKey(KeyCode.Space)
             };
 
@@ -147,7 +147,7 @@ public class Client : MonoBehaviour
 
             SendInput();
 
-            ++currentTick;
+            currentTick++;
         }
 
         this.currentTime = time;
@@ -187,19 +187,24 @@ public class Client : MonoBehaviour
     {
         InputMessage message = new()
         {
-            startTick = redundantInput ? latestTick : currentTick,
+            startTick = redundantInput.isOn ? latestTick : currentTick,
             inputs = new List<Input>()
         };
 
         //populate input(s)
-        for (int index = message.startTick; index <= currentTick; ++index)
+        for (int index = message.startTick; index <= currentTick; index++)
         {
             message.inputs.Add(inputBuffer[index % BUFFER_SIZE]);
         }
 
-        networkDriver.BeginSend(connection, out DataStreamWriter writer);
-        message.Serialize(ref writer);
-        networkDriver.EndSend(writer);
+        Debug.Log($"Client data: {message}");
+
+        if (connection.GetState(networkDriver) == NetworkConnection.State.Connected)
+        {
+            networkDriver.BeginSend(connection, out DataStreamWriter writer);
+            message.Serialize(ref writer);
+            networkDriver.EndSend(writer);
+        }
     }
 
     private void ReconcileState(StateMessage message, float deltaTime)
@@ -208,73 +213,72 @@ public class Client : MonoBehaviour
 
         latestTick = message.tick;
 
-        if (errorCorrection)
+        if (!errorCorrection.isOn)
         {
-            int index = message.tick % BUFFER_SIZE;
-            State state = stateBuffer[index];
-            Vector3 positionDelta = message.position - state.position;
-            float rotationDelta = 1.0f - Quaternion.Dot(message.rotation, state.rotation);
+            return;
+        }
 
-            if (positionDelta.sqrMagnitude > 0.0000001f || rotationDelta > 0.00001f)
+        int index = message.tick % BUFFER_SIZE;
+        State state = stateBuffer[index];
+        Vector3 positionDelta = message.position - state.position;
+        float rotationDelta = 1.0f - Quaternion.Dot(message.rotation, state.rotation);
+
+        if (positionDelta.sqrMagnitude > 0.0000001f || rotationDelta > 0.00001f)
+        {
+            Debug.Log($"Correcting for error at tick {message.tick} "
+                + $"(rewinding {(latestTick - message.tick)} ticks");
+
+            Vector3 prevPosition = rigidbody.position + positionError;
+            Quaternion prevRotation = rigidbody.rotation * rotationError;
+
+            rigidbody.position = message.position;
+            rigidbody.rotation = message.rotation;
+            rigidbody.velocity = message.velocity;
+            rigidbody.angularVelocity = message.angularVelocity;
+
+            int rewindTick = message.tick;
+            while (rewindTick < currentTick)
             {
-                Debug.Log("Correcting for error at tick "
-                    + message.tick
-                    + " (rewinding "
-                    + (latestTick - message.tick)
-                    + " ticks)");
-
-                Vector3 prevPosition = rigidbody.position + positionError;
-                Quaternion prevRotation = rigidbody.rotation * rotationError;
-
-                rigidbody.position = message.position;
-                rigidbody.rotation = message.rotation;
-                rigidbody.velocity = message.velocity;
-                rigidbody.angularVelocity = message.angularVelocity;
-
-                int rewindTick = message.tick;
-                while (rewindTick < currentTick)
+                index = rewindTick % BUFFER_SIZE;
+                stateBuffer[index] = new()
                 {
-                    index = rewindTick % BUFFER_SIZE;
-                    stateBuffer[index] = new()
-                    {
-                        position = rigidbody.position,
-                        rotation = rigidbody.rotation
-                    };
+                    position = rigidbody.position,
+                    rotation = rigidbody.rotation
+                };
 
-                    ApplyForce(rigidbody, inputBuffer[index]);
-                    physicsScene.Simulate(deltaTime);
+                ApplyForce(rigidbody, inputBuffer[index]);
+                physicsScene.Simulate(deltaTime);
 
-                    ++rewindTick;
-                }
-
-                if ((prevPosition - rigidbody.position).sqrMagnitude >= 4.0f)
-                {
-                    positionError = Vector3.zero;
-                    rotationError = Quaternion.identity;
-                }
-                else
-                {
-                    positionError = prevPosition - rigidbody.position;
-                    rotationError =
-                        Quaternion.Inverse(rigidbody.rotation) * prevRotation;
-                }
-
+                rewindTick++;
             }
 
-            if (correctionSmoothing)
-            {
-                positionError *= 0.9f;
-                rotationError =
-                    Quaternion.Slerp(rotationError, Quaternion.identity, 0.1f);
-            }
-            else
+            if ((prevPosition - rigidbody.position).sqrMagnitude >= 4.0f)
             {
                 positionError = Vector3.zero;
                 rotationError = Quaternion.identity;
             }
+            else
+            {
+                positionError = prevPosition - rigidbody.position;
+                rotationError =
+                    Quaternion.Inverse(rigidbody.rotation) * prevRotation;
+            }
 
-            player.transform.position = rigidbody.position + positionError;
-            player.transform.rotation = rigidbody.rotation * rotationError;
         }
+
+        if (correctionSmoothing.isOn)
+        {
+            positionError *= 0.9f;
+            rotationError =
+                Quaternion.Slerp(rotationError, Quaternion.identity, 0.1f);
+        }
+        else
+        {
+            positionError = Vector3.zero;
+            rotationError = Quaternion.identity;
+        }
+
+        player.transform.position = rigidbody.position + positionError;
+        player.transform.rotation = rigidbody.rotation * rotationError;
     }
 }

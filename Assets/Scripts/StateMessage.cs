@@ -27,16 +27,45 @@ public struct StateMessage : INetworkMessage
         writer.WriteFloat(angularVelocity.z);
     }
 
-    public void Deserialize(ref DataStreamReader reader)
+    public static StateMessage Deserialize(ref DataStreamReader reader)
     {
+        return new()
+        {
+            tick = reader.ReadInt(),
+            position = new()
+            {
+                x = reader.ReadFloat(),
+                y = reader.ReadFloat(),
+                z = reader.ReadFloat()
+            },
+            rotation = new()
+            {
+                x = reader.ReadFloat(),
+                y = reader.ReadFloat(),
+                z = reader.ReadFloat(),
+                w = reader.ReadFloat()
+            },
+            velocity = new()
+            {
+                x = reader.ReadFloat(),
+                y = reader.ReadFloat(),
+                z = reader.ReadFloat()
+            },
+            angularVelocity = new()
+            {
+                x = reader.ReadFloat(),
+                y = reader.ReadFloat(),
+                z = reader.ReadFloat()
+            }
+        };
     }
 
     public override string ToString()
     {
-        return $"tick={tick} " +
-            $"position={position} " +
-            $"rotation={rotation} " +
-            $"velocity={velocity} " +
+        return $"tick={tick}, " +
+            $"position={position}, " +
+            $"rotation={rotation}, " +
+            $"velocity={velocity}, " +
             $"angularVelocity={angularVelocity}";
     }
 }
