@@ -1,9 +1,10 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using Unity.Networking.Transport;
 
-public class Simulation : MonoBehaviour
+public class Client : MonoBehaviour
 {
     private struct State
     {
@@ -14,9 +15,9 @@ public class Simulation : MonoBehaviour
     public float moveForce;
     public float jumpThreshold;
     public GameObject player;
-    public bool errorCorrection = true;
-    public bool correctionSmoothing = true;
-    public bool redundantInput = true;
+    public Toggle errorCorrection;
+    public Toggle correctionSmoothing;
+    public Toggle redundantInput;
 
     private float currentTime;
     private int currentTick;
@@ -46,7 +47,73 @@ public class Simulation : MonoBehaviour
         InitializeScene();
     }
 
+    public void OnErrorCorrectionToggle(bool value)
+    {
+        correctionSmoothing.interactable = value;
+    }
+
     void Update()
+    {
+        ProcessNetworkEvents();
+        ProcessSimulationEvent();
+    }
+
+    void OnDestroy()
+    {
+        if (networkDriver.IsCreated)
+        {
+            networkDriver.Dispose();
+            connection = default(NetworkConnection);
+        }
+    }
+
+    private void InitializeNetwork()
+    {
+        networkDriver = NetworkDriver.Create();
+        NetworkEndPoint endpoint = NetworkEndPoint.Parse(Server.ADDRESS, Server.PORT);
+        connection = networkDriver.Connect(endpoint);
+    }
+
+    private void InitializeScene()
+    {
+        scene = SceneManager.LoadScene("Background",
+            new LoadSceneParameters()
+            {
+                loadSceneMode = LoadSceneMode.Additive,
+                localPhysicsMode = LocalPhysicsMode.Physics3D
+            });
+
+        physicsScene = scene.GetPhysicsScene();
+
+        SceneManager.MoveGameObjectToScene(player, scene);
+    }
+
+    private void ProcessNetworkEvents()
+    {
+        networkDriver.ScheduleUpdate().Complete();
+
+        DataStreamReader stream;
+        NetworkEvent.Type command;
+        while ((command = connection.PopEvent(networkDriver, out stream)) != NetworkEvent.Type.Empty)
+        {
+            switch(command)
+            {
+                case NetworkEvent.Type.Connect:
+                    Debug.Log("Connected to server");
+                    break;
+                case NetworkEvent.Type.Data:
+                    Debug.Log("Received data");
+                    //invoke ReconcileState
+                    break;
+                case NetworkEvent.Type.Disconnect:
+                    Debug.Log("Disconnected froms server");
+                    connection = default(NetworkConnection);
+                    break;
+            }
+        }
+    }
+
+    private void ProcessSimulationEvent()
     {
         float deltaTime = Time.fixedDeltaTime;
         float time = this.currentTime;
@@ -69,9 +136,14 @@ public class Simulation : MonoBehaviour
 
             int index = currentTick % BUFFER_SIZE;
             inputBuffer[index] = input;
+            stateBuffer[index] = new()
+            {
+                position = rigidbody.position,
+                rotation = rigidbody.rotation
+            };
 
-            UpdateStateAndStep(
-                ref stateBuffer[index], rigidbody, input, deltaTime);
+            ApplyForce(rigidbody, input);
+            physicsScene.Simulate(deltaTime);
 
             SendInput();
 
@@ -79,53 +151,6 @@ public class Simulation : MonoBehaviour
         }
 
         this.currentTime = time;
-    }
-
-    void OnDestroy()
-    {
-        if (networkDriver.IsCreated)
-        {
-            networkDriver.Dispose();
-            connection = default(NetworkConnection);
-        }
-    }
-
-    private void UpdateStateAndStep(
-        ref State state, Rigidbody rigidbody, Input input, float deltaTime)
-    {
-        state = new()
-        {
-            position = rigidbody.position,
-            rotation = rigidbody.rotation
-        };
-
-        ApplyForce(rigidbody, input);
-        physicsScene.Simulate(deltaTime);
-    }
-
-    private void InitializeNetwork()
-    {
-        networkDriver = NetworkDriver.Create();
-        NetworkEndPoint endpoint = NetworkEndPoint.Parse(Server.ADDRESS, Server.PORT);
-        connection = networkDriver.Connect(endpoint);
-        if (connection.IsCreated)
-        {
-            Debug.Log("Connected to server");
-        }
-    }
-
-    private void InitializeScene()
-    {
-        scene = SceneManager.LoadScene("Background",
-            new LoadSceneParameters()
-            {
-                loadSceneMode = LoadSceneMode.Additive,
-                localPhysicsMode = LocalPhysicsMode.Physics3D
-            });
-
-        physicsScene = scene.GetPhysicsScene();
-
-        SceneManager.MoveGameObjectToScene(player, scene);
     }
 
     private void ApplyForce(Rigidbody rigidbody, Input input)
@@ -172,11 +197,11 @@ public class Simulation : MonoBehaviour
             message.inputs.Add(inputBuffer[index % BUFFER_SIZE]);
         }
 
-        Debug.Log(message);
-        //TODO: serialize & send message (to server)
+        networkDriver.BeginSend(connection, out DataStreamWriter writer);
+        message.Serialize(ref writer);
+        networkDriver.EndSend(writer);
     }
 
-    //triggered when server state received
     private void ReconcileState(StateMessage message, float deltaTime)
     {
         Rigidbody rigidbody = player.GetComponent<Rigidbody>();
@@ -188,8 +213,7 @@ public class Simulation : MonoBehaviour
             int index = message.tick % BUFFER_SIZE;
             State state = stateBuffer[index];
             Vector3 positionDelta = message.position - state.position;
-            float rotationDelta =
-                1.0f - Quaternion.Dot(message.rotation, state.rotation);
+            float rotationDelta = 1.0f - Quaternion.Dot(message.rotation, state.rotation);
 
             if (positionDelta.sqrMagnitude > 0.0000001f || rotationDelta > 0.00001f)
             {
@@ -211,8 +235,14 @@ public class Simulation : MonoBehaviour
                 while (rewindTick < currentTick)
                 {
                     index = rewindTick % BUFFER_SIZE;
-                    UpdateStateAndStep(
-                        ref stateBuffer[index], rigidbody, inputBuffer[index], deltaTime);
+                    stateBuffer[index] = new()
+                    {
+                        position = rigidbody.position,
+                        rotation = rigidbody.rotation
+                    };
+
+                    ApplyForce(rigidbody, inputBuffer[index]);
+                    physicsScene.Simulate(deltaTime);
 
                     ++rewindTick;
                 }

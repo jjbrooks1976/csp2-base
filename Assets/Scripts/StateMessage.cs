@@ -35,7 +35,7 @@ public struct StateMessage : INetworkMessage
     {
         return $"tick={tick} " +
             $"position={position} " +
-            $"rotation={rotation}" +
+            $"rotation={rotation} " +
             $"velocity={velocity} " +
             $"angularVelocity={angularVelocity}";
     }

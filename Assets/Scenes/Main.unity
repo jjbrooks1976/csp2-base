@@ -527,55 +527,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 430431999}
   m_CullTransparentMesh: 0
---- !u!1 &512661502
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 512661504}
-  - component: {fileID: 512661503}
-  m_Layer: 0
-  m_Name: Main
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &512661503
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 512661502}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 00070a4e032d91840a3ea95e79a6c66f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  simulation: {fileID: 2053205579}
-  canvas: {fileID: 781794754}
-  errorCorrectionToggle: {fileID: 854616421}
-  correctionSmoothingToggle: {fileID: 826732240}
-  redundantInputToggle: {fileID: 1545589991}
---- !u!4 &512661504
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 512661502}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_RootOrder: 5
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &556022535
 GameObject:
   m_ObjectHideFlags: 0
@@ -811,7 +762,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 7
+  m_RootOrder: 6
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &767102048
 GameObject:
@@ -1023,7 +974,7 @@ RectTransform:
   - {fileID: 826732239}
   - {fileID: 1545589990}
   m_Father: {fileID: 0}
-  m_RootOrder: 6
+  m_RootOrder: 5
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -1115,19 +1066,7 @@ MonoBehaviour:
   m_Group: {fileID: 0}
   onValueChanged:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 512661503}
-        m_TargetAssemblyTypeName: Main, Assembly-CSharp
-        m_MethodName: OnCorrectionSmoothingToggled
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
   m_IsOn: 1
 --- !u!1 &854616419
 GameObject:
@@ -1215,13 +1154,13 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 512661503}
-        m_TargetAssemblyTypeName: Main, Assembly-CSharp
-        m_MethodName: OnErrorCorrectionToggled
-        m_Mode: 0
+      - m_Target: {fileID: 11500000, guid: 31f051fadb08a0c48b389530e37e00e0, type: 3}
+        m_TargetAssemblyTypeName: UnityEditor.MonoScript, UnityEditor.CoreModule
+        m_MethodName: 
+        m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_ObjectArgumentAssemblyTypeName: 
           m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
@@ -1510,19 +1449,7 @@ MonoBehaviour:
   m_Group: {fileID: 0}
   onValueChanged:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 512661503}
-        m_TargetAssemblyTypeName: Main, Assembly-CSharp
-        m_MethodName: OnRedundantInputToggled
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
   m_IsOn: 1
 --- !u!850595691 &1705852811
 LightingSettings:
@@ -1677,7 +1604,7 @@ GameObject:
   - component: {fileID: 2053205578}
   - component: {fileID: 2053205579}
   m_Layer: 0
-  m_Name: Simulation
+  m_Name: Client
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1713,9 +1640,9 @@ MonoBehaviour:
   moveForce: 0.5
   jumpThreshold: 0.75
   player: {fileID: 767102048}
-  errorCorrection: 1
-  correctionSmoothing: 1
-  redundantInput: 1
+  errorCorrection: {fileID: 854616421}
+  correctionSmoothing: {fileID: 826732240}
+  redundantInput: {fileID: 1545589991}
 --- !u!1 &2087355738
 GameObject:
   m_ObjectHideFlags: 0
