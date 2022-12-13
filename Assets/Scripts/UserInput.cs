@@ -1,7 +1,7 @@
 using UnityEngine;
 using Unity.Networking.Transport;
 
-public struct Input : INetworkMessage
+public struct UserInput : INetworkMessage
 {
     public bool up;
     public bool down;
@@ -18,7 +18,7 @@ public struct Input : INetworkMessage
         writer.WriteInt(jump ? 1 : 0);
     }
 
-    public static Input Deserialize(ref DataStreamReader reader)
+    public static UserInput Deserialize(ref DataStreamReader reader)
     {
         return new()
         {
@@ -32,10 +32,15 @@ public struct Input : INetworkMessage
 
     public override string ToString()
     {
-        return $"up={up}, " +
-            $"down={down}, " +
-            $"right={right}, " +
-            $"left={left}, " +
-            $"jump={jump}";
+        return $"up={FormatBoolean(up)}, " +
+            $"down={FormatBoolean(down)}, " +
+            $"right={FormatBoolean(right)}, " +
+            $"left={FormatBoolean(left)}, " +
+            $"jump={FormatBoolean(jump)}";
+    }
+
+    private string FormatBoolean(bool value)
+    {
+        return value.ToString().ToLower();
     }
 }

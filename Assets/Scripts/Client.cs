@@ -1,61 +1,62 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.SceneManagement;
 using Unity.Networking.Transport;
+
+struct ClientState
+{
+    public Vector3 position;
+    public Quaternion rotation;
+}
 
 public class Client : MonoBehaviour
 {
-    private struct State
-    {
-        public Vector3 position;
-        public Quaternion rotation;
-    }
-
-    public float moveForce;
-    public float jumpThreshold;
-    public GameObject player;
+    public GameObject clientPlayer;
     public Toggle errorCorrection;
     public Toggle correctionSmoothing;
     public Toggle redundantInput;
 
+    private const int BUFFER_SIZE = 1024;
+
+    private float deltaTime;
     private float currentTime;
     private int currentTick;
     private int latestTick;
-    private const int BUFFER_SIZE = 1024;
-    private Input[] inputBuffer; //predicted inputs
-    private State[] stateBuffer; //predicted states
+    private UserInput[] inputBuffer; //predicted inputs
+    private ClientState[] stateBuffer; //predicted states
     private Vector3 positionError;
     private Quaternion rotationError;
     private NetworkDriver networkDriver;
     private NetworkConnection connection;
-    private Scene scene;
-    private PhysicsScene physicsScene;
+    private Rigidbody playerBody;
+    private GameScene gameScene;
 
     void Start()
     {
+        deltaTime = Time.fixedDeltaTime;
         currentTime = 0.0f;
         currentTick = 0;
         latestTick = 0;
-        inputBuffer = new Input[BUFFER_SIZE];
-        stateBuffer = new State[BUFFER_SIZE];
+        inputBuffer = new UserInput[BUFFER_SIZE];
+        stateBuffer = new ClientState[BUFFER_SIZE];
         positionError = Vector3.zero;
         rotationError = Quaternion.identity;
         connection = default(NetworkConnection);
+        playerBody = clientPlayer.GetComponent<Rigidbody>();
+        gameScene = GameScene.Create(clientPlayer);
 
         InitializeNetwork();
-        InitializeScene();
     }
 
-    public void OnErrorCorrectionToggle(bool value)
+    public void OnErrorCorrectionToggle(bool toggle)
     {
-        correctionSmoothing.interactable = value;
+        correctionSmoothing.interactable = toggle;
     }
 
     void Update()
     {
-        ProcessNetworkEvents();
         AdvanceSimulation();
+        ProcessNetworkEvents();
     }
 
     void OnDestroy()
@@ -70,22 +71,42 @@ public class Client : MonoBehaviour
     private void InitializeNetwork()
     {
         networkDriver = NetworkDriver.Create();
-        NetworkEndPoint endpoint = NetworkEndPoint.Parse(Server.ADDRESS, Server.PORT);
+        NetworkEndPoint endpoint =
+            NetworkEndPoint.Parse(Server.ADDRESS, Server.PORT);
         connection = networkDriver.Connect(endpoint);
     }
 
-    private void InitializeScene()
+    private void AdvanceSimulation()
     {
-        scene = SceneManager.LoadScene("Background",
-            new LoadSceneParameters()
+        currentTime += Time.deltaTime;
+        while (currentTime >= deltaTime)
+        {
+            currentTime -= deltaTime;
+
+            UserInput input = new()
             {
-                loadSceneMode = LoadSceneMode.Additive,
-                localPhysicsMode = LocalPhysicsMode.Physics3D
-            });
+                up = Input.GetKey(KeyCode.W),
+                down = Input.GetKey(KeyCode.S),
+                right = Input.GetKey(KeyCode.D),
+                left = Input.GetKey(KeyCode.A),
+                jump = Input.GetKey(KeyCode.Space)
+            };
 
-        physicsScene = scene.GetPhysicsScene();
+            int index = currentTick % BUFFER_SIZE;
+            inputBuffer[index] = input;
+            stateBuffer[index] = new()
+            {
+                position = playerBody.position,
+                rotation = playerBody.rotation
+            };
 
-        SceneManager.MoveGameObjectToScene(player, scene);
+            GamePlayer.ApplyForce(playerBody, input);
+            gameScene.Simulate(deltaTime);
+
+            SendInput();
+
+            currentTick++;
+        }
     }
 
     private void ProcessNetworkEvents()
@@ -94,7 +115,8 @@ public class Client : MonoBehaviour
 
         DataStreamReader reader;
         NetworkEvent.Type command;
-        while ((command = connection.PopEvent(networkDriver, out reader)) != NetworkEvent.Type.Empty)
+        while ((command = connection.PopEvent(networkDriver, out reader)) !=
+            NetworkEvent.Type.Empty)
         {
             switch(command)
             {
@@ -102,8 +124,9 @@ public class Client : MonoBehaviour
                     Debug.Log("Connected to server");
                     break;
                 case NetworkEvent.Type.Data:
-                    Debug.Log("Received data");
-                    //invoke ReconcileState
+                    StateMessage message = StateMessage.Deserialize(ref reader);
+                    Debug.Log($"stateMessage: {message}");
+                    //TODO: reconcile client state
                     break;
                 case NetworkEvent.Type.Disconnect:
                     Debug.Log("Disconnected froms server");
@@ -113,172 +136,112 @@ public class Client : MonoBehaviour
         }
     }
 
-    private void AdvanceSimulation()
-    {
-        float deltaTime = Time.fixedDeltaTime;
-        float time = this.currentTime;
-
-        Rigidbody rigidbody = player.GetComponent<Rigidbody>();
-
-        time += Time.deltaTime;
-        while (time >= deltaTime)
-        {
-            time -= deltaTime;
-
-            Input input = new()
-            {
-                up = UnityEngine.Input.GetKey(KeyCode.W),
-                down = UnityEngine.Input.GetKey(KeyCode.S),
-                right = UnityEngine.Input.GetKey(KeyCode.D),
-                left = UnityEngine.Input.GetKey(KeyCode.A),
-                jump = UnityEngine.Input.GetKey(KeyCode.Space)
-            };
-
-            int index = currentTick % BUFFER_SIZE;
-            inputBuffer[index] = input;
-            stateBuffer[index] = new()
-            {
-                position = rigidbody.position,
-                rotation = rigidbody.rotation
-            };
-
-            ApplyForce(rigidbody, input);
-            physicsScene.Simulate(deltaTime);
-
-            SendInput();
-
-            currentTick++;
-        }
-
-        this.currentTime = time;
-    }
-
-    private void ApplyForce(Rigidbody rigidbody, Input input)
-    {
-        Transform camera = Camera.main.transform;
-
-        if (input.up)
-        {
-            rigidbody.AddForce(camera.forward * moveForce, ForceMode.Impulse);
-        }
-
-        if (input.down)
-        {
-            rigidbody.AddForce(-camera.forward * moveForce, ForceMode.Impulse);
-        }
-
-        if (input.right)
-        {
-            rigidbody.AddForce(camera.right * moveForce, ForceMode.Impulse);
-        }
-
-        if (input.left)
-        {
-            rigidbody.AddForce(-camera.right * moveForce, ForceMode.Impulse);
-        }
-
-        if (input.jump && rigidbody.transform.position.y <= jumpThreshold)
-        {
-            rigidbody.AddForce(camera.up * moveForce, ForceMode.Impulse);
-        }
-    }
-
     private void SendInput()
     {
-        InputMessage message = new()
-        {
-            startTick = redundantInput.isOn ? latestTick : currentTick,
-            inputs = new List<Input>()
-        };
-
-        //populate input(s)
-        for (int index = message.startTick; index <= currentTick; index++)
-        {
-            message.inputs.Add(inputBuffer[index % BUFFER_SIZE]);
-        }
-
-        Debug.Log($"Client data: {message}");
-
-        if (connection.GetState(networkDriver) == NetworkConnection.State.Connected)
-        {
-            networkDriver.BeginSend(connection, out DataStreamWriter writer);
-            message.Serialize(ref writer);
-            networkDriver.EndSend(writer);
-        }
-    }
-
-    private void ReconcileState(StateMessage message, float deltaTime)
-    {
-        Rigidbody rigidbody = player.GetComponent<Rigidbody>();
-
-        latestTick = message.tick;
-
-        if (!errorCorrection.isOn)
+        if (connection.GetState(networkDriver) !=
+            NetworkConnection.State.Connected)
         {
             return;
         }
 
-        int index = message.tick % BUFFER_SIZE;
-        State state = stateBuffer[index];
-        Vector3 positionDelta = message.position - state.position;
-        float rotationDelta = 1.0f - Quaternion.Dot(message.rotation, state.rotation);
-
-        if (positionDelta.sqrMagnitude > 0.0000001f || rotationDelta > 0.00001f)
+        InputMessage message = new()
         {
-            Debug.Log($"Correcting for error at tick {message.tick} "
-                + $"(rewinding {(latestTick - message.tick)} ticks");
+            startTick = redundantInput.isOn ? latestTick : currentTick,
+            inputs = new List<UserInput>()
+        };
 
-            Vector3 prevPosition = rigidbody.position + positionError;
-            Quaternion prevRotation = rigidbody.rotation * rotationError;
+        for (int i = message.startTick; i <= currentTick; i++)
+        {
+            message.inputs.Add(inputBuffer[i % BUFFER_SIZE]);
+        }
 
-            rigidbody.position = message.position;
-            rigidbody.rotation = message.rotation;
-            rigidbody.velocity = message.velocity;
-            rigidbody.angularVelocity = message.angularVelocity;
+        Debug.Log($"inputMessage={message}");
+        DataStreamWriter writer;
+        networkDriver.BeginSend(connection, out writer);
+        message.Serialize(ref writer);
+        networkDriver.EndSend(writer);
+    }
 
-            int rewindTick = message.tick;
-            while (rewindTick < currentTick)
+    //TODO: fix reconcilation logic
+    //To see the bug, start simulation and enable server player, error
+    //correction, and redundant inputs. Notice, the player jitter.
+    private void ReconcileState(StateMessage message)
+    {
+        latestTick = message.tick;
+
+        if (errorCorrection.isOn)
+        {
+            int index = message.tick % BUFFER_SIZE;
+            Vector3 positionError =
+                message.position - stateBuffer[index].position;
+            float rotationError = 1.0f - Quaternion.Dot(
+                message.rotation,
+                stateBuffer[index].rotation);
+
+            if (positionError.sqrMagnitude > 0.0000001f ||
+                rotationError > 0.00001f)
             {
-                index = rewindTick % BUFFER_SIZE;
-                stateBuffer[index] = new()
+                Debug.Log($"Correct error at tick {message.tick} " +
+                    $"(rewinding {currentTick - message.tick} ticks)");
+
+                Vector3 previousPosition =
+                    playerBody.position + this.positionError;
+                Quaternion previousRotation =
+                    playerBody.rotation * this.rotationError;
+
+                playerBody.position = message.position;
+                playerBody.rotation = message.rotation;
+                playerBody.velocity = message.velocity;
+                playerBody.angularVelocity = message.angularVelocity;
+
+                int rewindTick = message.tick;
+                while (rewindTick < currentTick)
                 {
-                    position = rigidbody.position,
-                    rotation = rigidbody.rotation
-                };
+                    index = rewindTick % BUFFER_SIZE;
 
-                ApplyForce(rigidbody, inputBuffer[index]);
-                physicsScene.Simulate(deltaTime);
+                    stateBuffer[index] = new()
+                    {
+                        position = playerBody.position,
+                        rotation = playerBody.rotation
+                    };
 
-                rewindTick++;
+                    GamePlayer.ApplyForce(playerBody, inputBuffer[index]);
+                    gameScene.Simulate(deltaTime);
+
+                    rewindTick++;
+                }
+
+                Vector3 positionDelta = previousPosition - playerBody.position;
+                if (positionDelta.sqrMagnitude >= 4.0f)
+                {
+                    this.positionError = Vector3.zero;
+                    this.rotationError = Quaternion.identity;
+                }
+                else
+                {
+                    this.positionError = positionDelta;
+                    this.rotationError =
+                        Quaternion.Inverse(playerBody.rotation) *
+                        previousRotation;
+                }
             }
-
-            if ((prevPosition - rigidbody.position).sqrMagnitude >= 4.0f)
-            {
-                positionError = Vector3.zero;
-                rotationError = Quaternion.identity;
-            }
-            else
-            {
-                positionError = prevPosition - rigidbody.position;
-                rotationError =
-                    Quaternion.Inverse(rigidbody.rotation) * prevRotation;
-            }
-
         }
 
         if (correctionSmoothing.isOn)
         {
-            positionError *= 0.9f;
-            rotationError =
-                Quaternion.Slerp(rotationError, Quaternion.identity, 0.1f);
+            this.positionError *= 0.9f;
+            this.rotationError = Quaternion.Slerp(
+                this.rotationError,
+                Quaternion.identity,
+                0.1f);
         }
         else
         {
-            positionError = Vector3.zero;
-            rotationError = Quaternion.identity;
+            this.positionError = Vector3.zero;
+            this.rotationError = Quaternion.identity;
         }
 
-        player.transform.position = rigidbody.position + positionError;
-        player.transform.rotation = rigidbody.rotation * rotationError;
+        playerBody.position += this.positionError;
+        playerBody.rotation *= this.rotationError;
     }
 }

@@ -9,12 +9,14 @@ public struct StateMessage : INetworkMessage
     public Vector3 velocity;
     public Vector3 angularVelocity;
 
+    public Vector3 Position { get => position; set => position = value; }
+
     public void Serialize(ref DataStreamWriter writer)
     {
         writer.WriteInt(tick);
-        writer.WriteFloat(position.x);
-        writer.WriteFloat(position.y);
-        writer.WriteFloat(position.z);
+        writer.WriteFloat(Position.x);
+        writer.WriteFloat(Position.y);
+        writer.WriteFloat(Position.z);
         writer.WriteFloat(rotation.x);
         writer.WriteFloat(rotation.y);
         writer.WriteFloat(rotation.z);
@@ -32,7 +34,7 @@ public struct StateMessage : INetworkMessage
         return new()
         {
             tick = reader.ReadInt(),
-            position = new()
+            Position = new()
             {
                 x = reader.ReadFloat(),
                 y = reader.ReadFloat(),
@@ -63,7 +65,7 @@ public struct StateMessage : INetworkMessage
     public override string ToString()
     {
         return $"tick={tick}, " +
-            $"position={position}, " +
+            $"position={Position}, " +
             $"rotation={rotation}, " +
             $"velocity={velocity}, " +
             $"angularVelocity={angularVelocity}";

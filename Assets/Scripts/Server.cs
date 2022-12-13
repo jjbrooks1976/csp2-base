@@ -7,18 +7,34 @@ public class Server : MonoBehaviour
     public const string ADDRESS = "127.0.0.1";
     public const ushort PORT = 9000;
 
+    public GameObject serverPlayer;
+
+    private float deltaTime;
+    private int currentTick;
     private NetworkDriver networkDriver;
     private NativeList<NetworkConnection> connections;
+    private Rigidbody playerBody;
+    private GameScene gameScene;
 
     void Start()
     {
+        deltaTime = Time.fixedDeltaTime;
+        currentTick = 0;
+        connections = new NativeList<NetworkConnection>(Allocator.Persistent);
+        playerBody = serverPlayer.GetComponent<Rigidbody>();
+        gameScene = GameScene.Create(serverPlayer);
+
         InitializeNetwork();
+    }
+
+    public void OnServerPlayerToggle(bool toggle)
+    {
+        Renderer renderer = serverPlayer.GetComponent<Renderer>();
+        renderer.enabled = toggle;
     }
 
     void Update()
     {
-        networkDriver.ScheduleUpdate().Complete();
-
         AcceptConnection();
         ProcessNetworkEvents();
     }
@@ -46,27 +62,31 @@ public class Server : MonoBehaviour
             networkDriver.Listen();
             Debug.Log($"Listing on port {PORT}");
         }
-
-        connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
     }
 
     private void AcceptConnection()
     {
         NetworkConnection connection;
-        while ((connection = networkDriver.Accept()) != default(NetworkConnection))
+        while ((connection = networkDriver.Accept()) !=
+            default(NetworkConnection))
         {
             connections.Add(connection);
-            Debug.Log($"Accepted a connection {connection.InternalId}");
+            Debug.Log($"Accepted connection {connection.InternalId}");
         }
     }
 
     private void ProcessNetworkEvents()
     {
+        networkDriver.ScheduleUpdate().Complete();
+
         DataStreamReader reader;
-        for (int index = 0; index < connections.Length; index++)
+        NetworkEvent.Type command;
+        NetworkConnection connection;
+        for (int i = 0; i < connections.Length; i++)
         {
-            NetworkEvent.Type command;
-            while ((command = networkDriver.PopEventForConnection(connections[index], out reader)) != NetworkEvent.Type.Empty)
+            connection = connections[i];
+            while ((command = networkDriver.PopEventForConnection(connection, out reader)) !=
+                NetworkEvent.Type.Empty)
             {
                 switch (command)
                 {
@@ -75,13 +95,53 @@ public class Server : MonoBehaviour
                         break;
                     case NetworkEvent.Type.Data:
                         InputMessage message = InputMessage.Deserialize(ref reader);
-                        Debug.Log($"Server data: {message}");
+                        Debug.Log($"inputMessage={message}");
+                        AdvanceSimulation(message, connection);
                         break;
                     case NetworkEvent.Type.Disconnect:
                         Debug.Log("Client disconnected from server");
-                        connections[index] = default(NetworkConnection);
+                        connections[i] = default(NetworkConnection);
                         break;
                 }
+            }
+        }
+    }
+
+    private void AdvanceSimulation(
+        InputMessage message,
+        NetworkConnection connection)
+    {
+        int startTick = message.startTick;
+        int inputCount = message.inputs.Count;
+        int maxTick = startTick + inputCount - 1;
+        if (maxTick >= currentTick)
+        {
+            int offsetTick =
+                currentTick > startTick ?
+                currentTick - startTick :
+                0;
+
+            DataStreamWriter writer;
+            for (int i = offsetTick; i < message.inputs.Count; i++)
+            {
+                GamePlayer.ApplyForce(playerBody, message.inputs[i]);
+                gameScene.Simulate(deltaTime);
+
+                currentTick++;
+
+                StateMessage stateMessage = new()
+                {
+                    tick = currentTick,
+                    position = playerBody.position,
+                    rotation = playerBody.rotation,
+                    velocity = playerBody.velocity,
+                    angularVelocity = playerBody.angularVelocity
+                };
+
+                Debug.Log($"stateMessage={stateMessage}");
+                networkDriver.BeginSend(connection, out writer);
+                stateMessage.Serialize(ref writer);
+                networkDriver.EndSend(writer);
             }
         }
     }

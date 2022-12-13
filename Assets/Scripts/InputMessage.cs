@@ -5,14 +5,13 @@ using Unity.Networking.Transport;
 public struct InputMessage : INetworkMessage
 {
     public int startTick;
-    public List<Input> inputs;
+    public List<UserInput> inputs;
 
     public void Serialize(ref DataStreamWriter writer)
     {
         writer.WriteInt(startTick);
-
         writer.WriteInt(inputs.Count);
-        foreach (Input input in inputs)
+        foreach (UserInput input in inputs)
         {
             input.Serialize(ref writer);
         }
@@ -23,13 +22,13 @@ public struct InputMessage : INetworkMessage
         InputMessage message = new()
         {
             startTick = reader.ReadInt(),
-            inputs = new List<Input>()
+            inputs = new List<UserInput>()
         };
 
         int count = reader.ReadInt();
-        for (int index = 0; index < count; index++)
+        for (int i = 0; i < count; i++)
         {
-            message.inputs.Add(Input.Deserialize(ref reader));
+            message.inputs.Add(UserInput.Deserialize(ref reader));
         }
 
         return message;
@@ -38,6 +37,7 @@ public struct InputMessage : INetworkMessage
     public override string ToString()
     {
         return $"startTick={startTick}, " +
-            $"inputs=[{string.Join("],[", inputs)}]";
+            $"inputCount={inputs.Count}, " +
+            $"inputs=({string.Join("),(", inputs)})";
     }
 }
