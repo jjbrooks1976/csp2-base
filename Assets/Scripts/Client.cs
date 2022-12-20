@@ -7,6 +7,12 @@ struct ClientState
 {
     public Vector3 position;
     public Quaternion rotation;
+
+    public override string ToString()
+    {
+        return $"position={position}, " +
+            $"rotation={rotation}";
+    }
 }
 
 public class Client : MonoBehaviour
@@ -126,7 +132,7 @@ public class Client : MonoBehaviour
                 case NetworkEvent.Type.Data:
                     StateMessage message = StateMessage.Deserialize(ref reader);
                     Debug.Log($"stateMessage: {message}");
-                    //TODO: reconcile client state
+                    ReconcileState(message);
                     break;
                 case NetworkEvent.Type.Disconnect:
                     Debug.Log("Disconnected froms server");
@@ -162,9 +168,6 @@ public class Client : MonoBehaviour
         networkDriver.EndSend(writer);
     }
 
-    //TODO: fix reconcilation logic
-    //To see the bug, start simulation and enable server player, error
-    //correction, and redundant inputs. Notice, the player jitter.
     private void ReconcileState(StateMessage message)
     {
         latestTick = message.tick;
@@ -177,6 +180,10 @@ public class Client : MonoBehaviour
             float rotationError = 1.0f - Quaternion.Dot(
                 message.rotation,
                 stateBuffer[index].rotation);
+
+            Debug.Log(stateBuffer[index]);
+            Debug.Log(positionError);
+            Debug.Log(rotationError);
 
             if (positionError.sqrMagnitude > 0.0000001f ||
                 rotationError > 0.00001f)

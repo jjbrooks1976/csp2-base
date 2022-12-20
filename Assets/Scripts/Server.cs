@@ -127,8 +127,6 @@ public class Server : MonoBehaviour
                 GamePlayer.ApplyForce(playerBody, message.inputs[i]);
                 gameScene.Simulate(deltaTime);
 
-                currentTick++;
-
                 StateMessage stateMessage = new()
                 {
                     tick = currentTick,
@@ -142,6 +140,8 @@ public class Server : MonoBehaviour
                 networkDriver.BeginSend(connection, out writer);
                 stateMessage.Serialize(ref writer);
                 networkDriver.EndSend(writer);
+
+                currentTick++;
             }
         }
     }
